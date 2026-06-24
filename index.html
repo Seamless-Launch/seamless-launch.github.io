@@ -1,0 +1,1418 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>QMT Frontdesk Anlaufplan Generator</title>
+    <style>
+        * { margin:0; padding:0; box-sizing:border-box; }
+
+        :root {
+            --bmw-blue: #1C69D4;
+            --bmw-dark: #262626;
+            --bmw-grey: #666666;
+            --bmw-light-grey: #F4F4F4;
+            --bmw-white: #FFFFFF;
+            --row-h: 50px;
+            --act-w: 320px;
+            --font-row: 13px;
+        }
+
+        body {
+            font-family: 'BMW Helvetica','Helvetica Neue',Arial,sans-serif;
+            background: var(--bmw-light-grey);
+            color: var(--bmw-dark);
+            padding: 20px;
+        }
+        #ganttChart {
+            position: relative;
+        }
+
+        .today-line {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            width: 2px;
+            background: #E60000;
+            z-index: 500;
+            pointer-events: none;
+            box-shadow: 0 0 4px rgba(230, 0, 0, 0.45);
+        }
+
+        .today-line::before {
+            content: attr(data-label);
+            position: absolute;
+            top: 2px;
+            left: 6px;
+            background: #E60000;
+            color: #fff;
+            font-size: 10px;
+            font-weight: 700;
+            padding: 3px 6px;
+            border-radius: 2px;
+            white-space: nowrap;
+        }
+
+        /* ── HEADER ── */
+        .header {
+            background: var(--bmw-white);
+            border-bottom: 3px solid var(--bmw-blue);
+            padding: 16px 36px;
+            display: flex; align-items: center;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,.1);
+        }
+        /* Replace the <svg> with <img class="bmw-logo" src="your-logo.png"> */
+        .bmw-logo { width:220px; height:150px; margin-right:18px; flex-shrink:0; object-fit:contain; }
+        .header-text {}
+        .header h1 { font-size:25px; font-weight:300; color:var(--bmw-dark); }
+        .header p  { font-size:15px; color:var(--bmw-grey); margin-top:2px; }
+
+        /* ── INPUT ── */
+        .input-section {
+            background: var(--bmw-white); padding: 26px;
+            border-radius: 4px; margin-bottom: 14px;
+            box-shadow: 0 2px 4px rgba(0,0,0,.08);
+        }
+        .input-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit,minmax(210px,1fr));
+            gap: 16px; margin-bottom: 16px;
+        }
+        .input-group { display:flex; flex-direction:column; }
+        .input-group label {
+            font-size:11px; font-weight:600; color:var(--bmw-grey);
+            margin-bottom:6px; text-transform:uppercase; letter-spacing:.5px;
+        }
+        .input-group input {
+            padding:10px 12px; border:1px solid #D0D0D0; border-radius:2px;
+            font-size:14px; font-family:inherit; transition:border-color .2s;
+        }
+        .input-group input:focus { outline:none; border-color:var(--bmw-blue); }
+
+        .btn-row { display:flex; gap:10px; flex-wrap:wrap; }
+        .btn-primary {
+            background:var(--bmw-blue); color:#fff; padding:11px 32px;
+            border:none; border-radius:2px; font-size:13px; font-weight:600;
+            cursor:pointer; transition:background .2s;
+        }
+        .btn-primary:hover { background:#155AB5; }
+        .btn-secondary {
+            background:var(--bmw-white); color:var(--bmw-blue);
+            padding:11px 24px; border:1px solid var(--bmw-blue);
+            border-radius:2px; font-size:13px; font-weight:600;
+            cursor:pointer; transition:all .2s;
+        }
+        .btn-secondary:hover { background:var(--bmw-light-grey); }
+
+        /* ── MESSAGES ── */
+        .success-msg {
+            background:#D4EDDA; border:1px solid #C3E6CB; color:#155724;
+            padding:12px 18px; border-radius:4px; margin-bottom:14px;
+            display:none; align-items:center; gap:10px; font-size:13px;
+        }
+        .success-msg.show { display:flex; }
+        .project-info {
+            background:#E3F2FD; border-left:4px solid var(--bmw-blue);
+            padding:11px 18px; margin-bottom:14px; border-radius:2px;
+            font-size:13px; display:none;
+        }
+
+        /* ── CONTROLS ── */
+        .controls-section {
+            background:var(--bmw-white); padding:12px 20px;
+            border-radius:4px; margin-bottom:14px;
+            box-shadow:0 2px 4px rgba(0,0,0,.08);
+            display:none; justify-content:space-between;
+            align-items:center; flex-wrap:wrap; gap:10px;
+        }
+        .ctrl-left  { display:flex; gap:8px; align-items:center; }
+        .ctrl-right { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+        .ctrl-label {
+            font-size:11px; font-weight:600; color:var(--bmw-grey);
+            text-transform:uppercase; letter-spacing:.4px; margin-right:2px;
+        }
+        .ctrl-btn {
+            padding:7px 14px; background:var(--bmw-white);
+            border:1px solid #D0D0D0; border-radius:2px;
+            font-size:12px; cursor:pointer; transition:all .15s;
+            white-space:nowrap;
+        }
+        .ctrl-btn.active { background:var(--bmw-blue); color:#fff; border-color:var(--bmw-blue); }
+        .ctrl-btn:hover:not(.active) { background:var(--bmw-light-grey); }
+
+        /* filter selects */
+        .ctrl-select {
+            padding:7px 10px; border:1px solid #D0D0D0; border-radius:2px;
+            font-size:12px; background:var(--bmw-white); cursor:pointer;
+            font-family:inherit; color:var(--bmw-dark);
+        }
+        .ctrl-select:focus { outline:none; border-color:var(--bmw-blue); }
+
+        /* ── GANTT CONTAINER ── */
+        .gantt-container {
+            background:var(--bmw-white); padding:14px; border-radius:4px;
+            box-shadow:0 2px 4px rgba(0,0,0,.08);
+            overflow:auto; max-height:80vh; display:none;
+        }
+        .gantt-container.fullscreen {
+            position:fixed; top:0; left:0; right:0; bottom:0;
+            max-height:100vh; z-index:1500; border-radius:0; padding:14px;
+        }
+        .gantt-wrapper { min-width:1350px; }
+
+        /* ── RFI ROW ── */
+        .rfi-row { display:flex; height:44px; margin-bottom:2px; }
+        .rfi-row-left { flex:0 0 var(--act-w); min-width:var(--act-w); }
+        .rfi-row-right { flex:1; position:relative; }
+        .rfi-pin {
+            position:absolute; top:0;
+            display:flex; flex-direction:column; align-items:center;
+            transform:translateX(-50%);
+        }
+        .rfi-diamond-outer {
+            width:12px; height:12px;
+            border:2px solid var(--bmw-blue);
+            transform:rotate(45deg); background:transparent; flex-shrink:0;
+        }
+        .rfi-pin-label {
+            font-size:10px; font-weight:700; color:var(--bmw-blue);
+            white-space:nowrap; margin-top:3px;
+        }
+        .rfi-pin-sub { font-size:8px; color:var(--bmw-grey); white-space:nowrap; }
+
+        /* ── PHASE HEADER ── */
+        .gantt-header {
+            display:flex; background:var(--bmw-blue); color:#fff;
+            font-weight:600; border-radius:4px 4px 0 0;
+            position:sticky; top:0; z-index:100;
+        }
+        .gantt-header-cell {
+            flex:1; text-align:center; padding:8px 4px; font-size:12px;
+            border-right:1px solid rgba(255,255,255,.2); min-width:80px;
+        }
+        .gantt-header-cell:first-child {
+            flex:0 0 var(--act-w); min-width:var(--act-w);
+            text-align:left; padding-left:16px;
+            border-right:2px solid rgba(255,255,255,.35);
+        }
+        .gantt-header-cell:last-child { border-right:none; }
+        .gantt-header-cell small {
+            display:block; font-size:9px; font-weight:400; opacity:.85; margin-top:1px;
+        }
+
+        /* ── SECTION ── */
+        .gantt-section { margin-bottom:14px; }
+        .section-title {
+            background:#EEF3FB; padding:8px 16px;
+            font-weight:700; font-size:13px; color:var(--bmw-dark);
+            border-left:4px solid var(--bmw-blue); margin-bottom:1px;
+            cursor:pointer; display:flex; justify-content:space-between;
+            align-items:center; transition:background .15s; user-select:none;
+        }
+        .section-title:hover { background:#E0EAF8; }
+        .section-title .tgl { font-size:13px; color:var(--bmw-blue); transition:transform .2s; }
+        .section-title.collapsed .tgl { transform:rotate(-90deg); }
+        .section-body { overflow:hidden; max-height:5000px; transition:max-height .3s ease; }
+        .section-body.collapsed { max-height:0; }
+
+        /* ── ROW ── */
+        .gantt-row {
+            display:flex; min-height:var(--row-h);
+            border-bottom:1px solid #EEEEEE; transition:background .1s;
+        }
+        .gantt-row:hover { background:#F8FAFD; }
+        .gantt-row.spacer { min-height:12px; border-bottom:none; }
+        .gantt-row.hidden { display:none; }
+
+        .row-left {
+            flex:0 0 var(--act-w); min-width:var(--act-w);
+            padding:6px 12px 6px 16px;
+            display:flex; flex-direction:column; justify-content:center;
+            border-right:2px solid #E0E0E0;
+        }
+        .act-name {
+            font-size:var(--font-row); font-weight:600;
+            color:var(--bmw-dark); line-height:1.3;
+        }
+
+        .act-link {
+            color: var(--bmw-dark);
+            text-decoration: none;
+            border-bottom: 1px dotted var(--bmw-blue);
+            cursor: pointer;
+        }
+
+        .act-link:hover {
+            color: var(--bmw-blue);
+            border-bottom-style: solid;
+        }
+
+        .act-name.light-weight { font-weight:400; }
+        .act-milestone { font-size:11px; color:var(--bmw-blue); margin-top:2px; }
+        .act-nutzen    { font-size:11px; color:var(--bmw-grey); margin-top:1px; line-height:1.3; }
+        .act-dates     { font-size:10px; color:#888; margin-top:2px; font-style:italic; }
+
+        /* ── TIMELINE ── */
+        .row-right { flex:1; position:relative; display:flex; }
+        .phase-cell { flex:1; border-right:1px solid #F0F0F0; min-width:80px; }
+
+        /* connector line between diamonds */
+        .g-connector {
+            position:absolute;
+            height:3px;
+            top:50%; transform:translateY(-50%);
+            background:#A8C4E8;
+            border-radius:2px;
+            z-index:1;
+            pointer-events:none;
+        }
+
+        /* diamond */
+        .g-diamond {
+            position:absolute;
+            top:50%; transform:translateX(-50%) translateY(-50%);
+            width:20px; height:20px;
+            display:flex; align-items:center; justify-content:center;
+            cursor:pointer; z-index:3;
+        }
+        .g-diamond-inner {
+            width:12px; height:12px;
+            background:transparent;
+            border:2px solid var(--bmw-blue);
+            transform:rotate(45deg);
+            transition:background .15s, width .15s, height .15s;
+        }
+        .g-diamond:hover .g-diamond-inner {
+            background:var(--bmw-blue); width:14px; height:14px;
+        }
+
+        /* ── TOOLTIP ── */
+        .tooltip {
+            position:fixed; background:var(--bmw-dark); color:#fff;
+            padding:13px 15px; border-radius:4px; font-size:12px;
+            z-index:9999; pointer-events:none; opacity:0;
+            transition:opacity .15s; min-width:270px; max-width:400px;
+            box-shadow:0 4px 18px rgba(0,0,0,.35);
+        }
+        .tooltip.show { opacity:1; }
+        .tip-title {
+            font-weight:700; font-size:13px; margin-bottom:9px;
+            border-bottom:1px solid rgba(255,255,255,.18);
+            padding-bottom:7px; line-height:1.4;
+        }
+        .tip-row { display:flex; justify-content:space-between; margin:4px 0; }
+        .tip-lbl { color:#AAAAAA; white-space:nowrap; margin-right:10px; }
+        .tip-val  { font-weight:500; text-align:right; }
+        .tip-desc {
+            margin-top:8px; padding-top:7px;
+            border-top:1px solid rgba(255,255,255,.15);
+            font-size:11px; color:#CCCCCC; line-height:1.4;
+        }
+
+        /* ── MODAL ── */
+        .modal {
+            display:none; position:fixed;
+            top:0; left:0; width:100%; height:100%;
+            background:rgba(0,0,0,.5); z-index:2000;
+            justify-content:center; align-items:center;
+        }
+        .modal.show { display:flex; }
+        .modal-box { background:#fff; padding:24px; border-radius:4px; max-width:360px; width:90%; }
+        .modal-title { font-size:17px; font-weight:600; margin-bottom:14px; }
+        .exp-opts { display:flex; flex-direction:column; gap:10px; }
+        .exp-opt {
+            padding:12px; border:2px solid #E0E0E0; border-radius:4px;
+            cursor:pointer; display:flex; align-items:center; gap:12px; transition:all .2s;
+        }
+        .exp-opt:hover { border-color:var(--bmw-blue); background:#F8FAFD; }
+        .exp-icon { font-size:20px; }
+        .exp-info h4 { font-size:13px; margin-bottom:2px; }
+        .exp-info p  { font-size:11px; color:var(--bmw-grey); }
+
+        .footer {
+            text-align:center; padding:14px;
+            color:var(--bmw-grey); font-size:11px; margin-top:14px;
+        }
+    </style>
+</head>
+<body>
+
+<!-- HEADER -->
+<div class="header">
+    <img class="bmw-logo" src="bmwgrp.png" alt="Logo">
+    <div class="header-text">
+        <h1>QMT Frontdesk Anlaufplan Generator</h1>
+        <p>Seamless Launch &amp; Gantt-Visualisierung</p>
+    </div>
+</div>
+
+<!-- INPUT -->
+<div class="input-section">
+    <div class="input-grid">
+        <div class="input-group">
+            <label>Projekt</label>
+            <input type="text" id="projectName" placeholder="z.B. NA5">
+        </div>
+        <div class="input-group">
+            <label>Projektstart</label>
+            <input type="date" id="startDate">
+        </div>
+        <div class="input-group">
+            <label>Projektende</label>
+            <input type="date" id="endDate">
+        </div>
+    </div>
+    <div class="btn-row">
+        <button class="btn-primary"   onclick="generateGantt()">Anlaufplan generieren</button>
+        <button class="btn-secondary" onclick="showExportModal()">Exportieren</button>
+    </div>
+</div>
+
+<div class="success-msg" id="successMsg"></div>
+<div class="project-info" id="projectInfo"></div>
+
+<!-- CONTROLS: fullscreen LEFT, filters RIGHT -->
+<div class="controls-section" id="ctrlSection">
+    <div class="ctrl-left">
+        <button class="ctrl-btn" id="fsBtn" onclick="toggleFullscreen()">⛶ Vollbild</button>
+    </div>
+    <div class="ctrl-right">
+        <span class="ctrl-label">Filter:</span>
+        <select class="ctrl-select" id="filterSection" onchange="applyFilters()">
+            <option value="">Alle Sektionen</option>
+            <option value="RFI'S">LeLe Prozess</option>
+            <option value='"TOP 50" THEMEN'>"TOP 50" Themen</option>
+            <option value="Good Practices">Good Practices</option>
+            <option value="Lieferantenmanagement">Lieferantenmanagement</option>
+            <option value="Supportplanung Werk">Supportplanung Werk</option>
+            <option value="E/E Prüfstände">E/E Prüfstände</option>
+            <option value="LDM Prüfungen">LDM Prüfungen</option>
+            <option value="Präventives Versorgungsteam">Präventives Versorgungsteam</option>
+            <option value="Projektübergabe">Projektübergabe</option>
+            <option value="Sonstiges">Sonstiges</option>
+        </select>
+        <select class="ctrl-select" id="filterPhase" onchange="applyFilters()">
+            <option value="">Alle Phasen</option>
+            <option value="Projektphase">Projektphase</option>
+            <option value="BBG">BBG</option>
+            <option value="PVL">PVL / VS 0</option>
+            <option value="VS1">VS1</option>
+            <option value="VS2">VS2</option>
+            <option value="AP">AP/HEA</option>
+            <option value="SOP">SOP</option>
+            <option value="3Mo">3 Mo. n. SOP</option>
+            <option value="OtD">OtD</option>
+        </select>
+        <select class="ctrl-select" id="filterPerson" onchange="applyFilters()">
+            <option value="">Alle Abteilung</option>
+            <option value="QMT FD">QMT FD</option>
+            <option value="QMT BD">QMT BD</option>
+            <option value="QMT PL">QMT PL</option>
+        </select>
+        <button class="ctrl-btn" onclick="resetFilters()">✕ Filter zurücksetzen</button>
+    </div>
+</div>
+
+<!-- GANTT -->
+<div class="gantt-container" id="ganttContainer">
+    <div class="gantt-wrapper" id="ganttWrapper">
+        <div id="ganttChart"></div>
+    </div>
+</div>
+
+<!-- TOOLTIP -->
+<div class="tooltip" id="tooltip">
+    <div class="tip-title" id="tipTitle"></div>
+    <div id="tipBody"></div>
+</div>
+
+<!-- EXPORT MODAL -->
+<div class="modal" id="expModal">
+    <div class="modal-box">
+        <div class="modal-title">Export Format wählen</div>
+        <div class="exp-opts">
+            <div class="exp-opt" onclick="doExport('png')">
+                <div class="exp-icon">🖼️</div>
+                <div class="exp-info"><h4>PNG Bild</h4><p>Hochauflösendes Rasterbild</p></div>
+            </div>
+            <div class="exp-opt" onclick="doExport('pdf')">
+                <div class="exp-icon">📄</div>
+                <div class="exp-info"><h4>PDF Dokument</h4><p>Druckoptimiertes Format</p></div>
+            </div>
+            <div class="exp-opt" onclick="closeExportModal()">
+                <div class="exp-icon">✕</div>
+                <div class="exp-info"><h4>Abbrechen</h4><p></p></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="footer">© 2026 BMW Group | QMT Frontdesk Anlaufplanung</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script>
+
+// ════════════════════════════════════════════════
+//  PHASES  — 9 equal columns
+// ════════════════════════════════════════════════
+const PHASES = [
+    { key:"Projektphase", label:"Projektphase", idx:0 },
+    { key:"BBG",          label:"BBG",          idx:1 },
+    { key:"PVL",          label:"PVL / VS 0",   idx:2 },
+    { key:"VS1",          label:"VS1",          idx:3 },
+    { key:"VS2",          label:"VS2",          idx:4 },
+    { key:"AP",           label:"AP/HEA",       idx:5 },
+    { key:"SOP",          label:"SOP",          idx:6 },
+    { key:"3Mo",          label:"3 Mo. n. SOP", idx:7 },
+    { key:"OtD",          label:"OtD",          idx:8 }
+];
+const N = PHASES.length; // 9
+
+// RFI markers (float positions in column units)
+const RFI_MARKERS = [
+    { key:"RFI2",  label:"RFI 2",  sub:"Ready for Concept/Nomination", pos:0.00 },
+    { key:"RFI2a", label:"RFI 2a", sub:"Ready for BBG",                pos:0.92 },
+    { key:"RFI3",  label:"RFI 3",  sub:"Ready for Test",               pos:1.50 },
+    { key:"RFI4",  label:"RFI 4",  sub:"Ready for PZS",                pos:2.67 },
+    { key:"PZS",   label:"PZS",    sub:"",                             pos:4.67 },
+    { key:"RFI5",  label:"RFI 5",  sub:"Ready for ProCon",             pos:4.90 }
+];
+
+// ════════════════════════════════════════════════
+//  POSITION HELPERS
+// ════════════════════════════════════════════════
+const pct = f => (f / N) * 100;
+
+function phaseCentre(key) {
+    const p = PHASES.find(x => x.key === key);
+    return p ? pct(p.idx + 0.5) : 0;
+}
+function rfiPct(key) {
+    const r = RFI_MARKERS.find(x => x.key === key);
+    return r ? pct(r.pos) : 0;
+}
+function resolveLeft(key) {
+    if (RFI_MARKERS.find(x => x.key === key)) return rfiPct(key);
+    return phaseCentre(key);
+}
+
+// ════════════════════════════════════════════════
+//  DATE CALCULATION
+//  Given project start/end dates, map each phase
+//  to a real calendar date proportionally.
+//  Phase idx 0 = start date, idx 8 = end date.
+// ════════════════════════════════════════════════
+let projectStartDate = null;
+let projectEndDate   = null;
+
+function phaseToDate(phaseKey) {
+    if (!projectStartDate || !projectEndDate) return null;
+    const p = PHASES.find(x => x.key === phaseKey);
+    if (!p) return null;
+    const totalMs = projectEndDate - projectStartDate;
+    const fraction = p.idx / (N - 1);
+    return new Date(projectStartDate.getTime() + fraction * totalMs);
+}
+
+function rfiToDate(rfiKey) {
+    if (!projectStartDate || !projectEndDate) return null;
+    const r = RFI_MARKERS.find(x => x.key === rfiKey);
+    if (!r) return null;
+    const totalMs = projectEndDate - projectStartDate;
+    const fraction = r.pos / (N - 1);
+    return new Date(projectStartDate.getTime() + fraction * totalMs);
+}
+
+function resolveDate(key) {
+    const rfi = RFI_MARKERS.find(x => x.key === key);
+    if (rfi) return rfiToDate(key);
+    return phaseToDate(key);
+}
+
+function fmtDate(d) {
+    if (!d) return '–';
+    return d.toLocaleDateString('de-DE', { month:'2-digit', year:'2-digit' });
+}
+
+function getTodayFraction() {
+    if (!projectStartDate || !projectEndDate) return null;
+
+    const now = new Date();
+
+    // Normalize to date-only, so time of day does not shift the line slightly
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const start = new Date(
+        projectStartDate.getFullYear(),
+        projectStartDate.getMonth(),
+        projectStartDate.getDate()
+    );
+    const end = new Date(
+        projectEndDate.getFullYear(),
+        projectEndDate.getMonth(),
+        projectEndDate.getDate()
+    );
+
+    if (end <= start) return null;
+    if (today < start || today > end) return null;
+
+    return (today - start) / (end - start);
+}
+
+function renderTodayLine() {
+    const root = document.getElementById('ganttChart');
+    if (!root) return;
+
+    const oldLine = document.getElementById('todayLine');
+    if (oldLine) oldLine.remove();
+
+    const fraction = getTodayFraction();
+    if (fraction === null) return;
+
+    const line = document.createElement('div');
+    line.id = 'todayLine';
+    line.className = 'today-line';
+    line.dataset.label = `Heute ${new Date().toLocaleDateString('de-DE')}`;
+
+    root.appendChild(line);
+
+    requestAnimationFrame(updateTodayLine);
+}
+
+function updateTodayLine() {
+    const root = document.getElementById('ganttChart');
+    const line = document.getElementById('todayLine');
+    if (!root || !line) return;
+
+    const fraction = getTodayFraction();
+    if (fraction === null) {
+        line.style.display = 'none';
+        return;
+    }
+
+    const styles = getComputedStyle(document.documentElement);
+    const activityWidth = parseFloat(styles.getPropertyValue('--act-w')) || 320;
+
+    const totalWidth = root.clientWidth;
+    const timelineWidth = totalWidth - activityWidth;
+
+    if (timelineWidth <= 0) return;
+
+    const leftPx = activityWidth + (fraction * timelineWidth);
+
+    line.style.left = `${leftPx}px`;
+    line.style.display = 'block';
+}
+
+// ════════════════════════════════════════════════
+//  DATA
+//  Each row has:
+//    section   → section header key (for filtering)
+//    name      → activity name
+//    bold      → true = bold header sub-row
+//    meilenstein → left column tag
+//    nutzen    → description text
+//    rasic     → { r, a, s }
+//    description, documents
+//    chart     → array of { type:"diamond", at:"KEY" }
+//
+//  CONNECTOR RULE:
+//    ≥2 diamonds → auto thin connector line between first & last
+//    1 diamond   → no connector
+//    0 diamonds  → empty row
+//
+//  DIAMOND PLACEMENT RULE (corrected from Meilenstein column):
+//    "ab PVL"       → starts at PVL
+//    "ab VS 0"      → starts at PVL (VS0 = PVL column)
+//    "ab VS 1"      → starts at VS1
+//    "ab VS 2"      → starts at VS2
+//    "ab PVL/VS0"   → starts at PVL
+//    "ab HEA"       → starts at AP
+//    "BBG"          → at BBG
+//    "PVL, PZS"     → PVL + PZS
+//    "n. SOP"       → at 3Mo
+//    "Projektphase" → at Projektphase
+//    "RFI 2"        → at RFI2
+//    "RFI 4"        → at RFI4
+//    "PZS"          → at PZS
+//    "zum RFI 5"    → at VS2 + RFI5
+//    "zu PVL"       → at PVL
+//    "3 Mo. n. SOP" → at 3Mo
+// ════════════════════════════════════════════════
+const DATA = [
+
+    // ── LeLe Prozess ─────────────────────────────────
+    { section:"LeLe Prozess" },
+    {
+        name:"LeLe Prozess", sectionKey:"LeLe Prozess",
+        meilenstein:"RFI 2", nutzen:"Input Serienknow-how",
+        rasic:{r:"QMT FD",a:"QMT BD",s:"QMT PL"},
+        description:"von Gerhard Brielbeck",
+        link: "https://atc.bmwgroup.net/confluence/spaces/~qtg4000/pages/8438514193/Seamless+Launch+Folder",
+        chart:[ {type:"diamond", at:"RFI2"} ]
+    },
+    {
+        name:"LeLe bei der Vergabe in LH-Prozess einbringen", sectionKey:"LeLe Prozess",
+        meilenstein:"RFI 2", nutzen:"100% EOL Prüfung von 2nd-tier Umfängen beim 1st-tier",
+        rasic:{r:"QMT BD",a:"QMT BD",s:"QMT FD"},
+        documents:"MO-12: Per JIRA Platform",
+        link: "https://atc.bmwgroup.net/confluence/spaces/~qtg4000/pages/8438514193/Seamless+Launch+Folder",
+        chart:[ {type:"diamond", at:"RFI2"} ]
+    },
+    {
+        name:"Check Update FMEA", sectionKey:"LeLe Prozess",
+        meilenstein:"RFI 2",
+        rasic:{r:"QMT BD",a:"QMT FD",s:"QMT PL"},
+        description:"Check ob FMEA Prozess Update (BI 1-5) gegeben hat",
+        link: "https://atc.bmwgroup.net/confluence/spaces/~qtg4000/pages/8438514193/Seamless+Launch+Folder",
+        chart:[ {type:"diamond", at:"RFI2"} ]
+    },
+
+    // ── "TOP 50" THEMEN ───────────────────────
+    { section:'"TOP 50" THEMEN' },
+    {
+        name:'Input "TOP 50" Themen QMT FD', sectionKey:'"TOP 50" THEMEN',
+        meilenstein:"Ready 4 BBG", nutzen:"Tracking Input Serienknow-how",
+        rasic:{r:"QMT FD",a:"QMT BD",s:"QMT PL"},
+        documents:"Steckbrief pro Umfang",
+        link: "https://atc.bmwgroup.net/confluence/spaces/~qtg4000/pages/8438514193/Seamless+Launch+Folder",
+        // Meilenstein = Ready 4 BBG → starts at Projektphase, ends BBG
+        chart:[
+            {type:"diamond", at:"Projektphase"},
+            {type:"diamond", at:"BBG"}
+        ]
+    },
+    {
+        name:"Status/Abstimmung vor den Bauphasen (mit TOP 50)", sectionKey:'"TOP 50" THEMEN',
+        meilenstein:"vor BBG", nutzen:"Abgleich und Update TOP Themen",
+        rasic:{r:"QMT FD",a:"QMT FD",s:"QMT BD"},
+        documents:"Basis TOP 50",
+        link: "https://atc.bmwgroup.net/confluence/spaces/~qtg4000/pages/8438514193/Seamless+Launch+Folder",
+        // "vor BBG" means recurring through all subsequent phases
+        chart:[
+            {type:"diamond", at:"BBG"},
+            {type:"diamond", at:"PVL"},
+            {type:"diamond", at:"VS1"},
+            {type:"diamond", at:"VS2"},
+            {type:"diamond", at:"AP"},
+            {type:"diamond", at:"SOP"},
+            {type:"diamond", at:"3Mo"}
+        ]
+    },
+    {
+        name:"Themenabgleich vor Ort (FIZ) mit TOP50", sectionKey:'"TOP 50" THEMEN',
+        meilenstein:"BBG", nutzen:"Abgleich und Status Themenlandschaft",
+        rasic:{r:"QMT FD",a:"QMT FD",s:"QMT BD"},
+        documents:"Basis TOP 50",
+        link: "https://atc.bmwgroup.net/confluence/spaces/~qtg4000/pages/8438514193/Seamless+Launch+Folder",
+        // BBG → short connector to PVL (per Excel image)
+        chart:[
+            {type:"diamond", at:"BBG"},
+            {type:"diamond", at:"PVL"}
+        ]
+    },
+    {
+        name:"RFI5/DOC Bewertung durch QMT FD", sectionKey:'"TOP 50" THEMEN',
+        meilenstein:"zum RFI 5",
+        rasic:{r:"QMT FD",a:"QMT PL",s:"QMT BD"},
+        documents:"Basis TOP 50",
+        link: "https://atc.bmwgroup.net/confluence/spaces/~qtg4000/pages/8438514193/Seamless+Launch+Folder",
+        // Starts at VS2, ends at RFI5 (which is just before AP)
+        chart:[
+            {type:"diamond", at:"VS2"},
+            {type:"diamond", at:"RFI5"}
+        ]
+    },
+    {
+        name:"Vorleistungen und Abweichungen monitoren", sectionKey:'"TOP 50" THEMEN',
+        rasic:{r:"QMT FD",a:"QMT BD",s:"QMT BD"},
+        link: "https://atc.bmwgroup.net/confluence/spaces/~qtg4000/pages/8438514193/Seamless+Launch+Folder",
+        chart:[]
+    },
+    {
+        name:"Betrachtung Motor/HVS Themenlage", sectionKey:'"TOP 50" THEMEN',
+        description:"MO-38",
+        link: "https://atc.bmwgroup.net/confluence/spaces/~qtg4000/pages/8438514193/Seamless+Launch+Folder",
+        chart:[]
+    },
+
+    // ── GOOD PRACTICES ────────────────────────
+    { section:"Good Practices" },
+    {
+        name:"QMT WPL (MO-Lx) in Morgenrunden", sectionKey:"Good Practices",
+        meilenstein:"ab PVL", nutzen:"Abgleich Themenlandschaft",
+        rasic:{r:"QMT FD",a:"-",s:"QMT PL"},
+        link: "https://atc.bmwgroup.net/confluence/spaces/~qtg4000/pages/8438514193/Seamless+Launch+Folder",
+        // ab PVL → 1 diamond at PVL (corrected from VS1)
+        chart:[ {type:"diamond", at:"PVL"} ]
+    },
+    {
+        name: "EOL Support",
+        sectionKey: "Good Practices",
+        meilenstein: "PVL, PZS",
+        nutzen: "Sicherstellung Anlieferqualität vor Ort",
+        rasic:{r:"QMT FD",a:"QMT PL",s:"QMT BD"},
+        documents:"Basis TOP 50",
+        link: "https://atc.bmwgroup.net/confluence/spaces/~qtg4000/pages/8438514193/Seamless+Launch+Folder",
+        chart:[
+            {type:"diamond", at:"PVL"},
+            {type:"diamond", at:"PZS"}
+        ]
+    },
+    {
+        name:"Vereinbarung Teilnahme PZS Kleeblatt", sectionKey:"Good Practices",
+        meilenstein:"RFI 4",
+        rasic:{r:"QMT PL",a:"QMT PL",s:"QMT BD"},
+        documents:"Basis TOP 50",
+        link: "https://atc.bmwgroup.net/confluence/spaces/~qtg4000/pages/8438514193/Seamless+Launch+Folder",
+        chart:[ {type:"diamond", at:"RFI4"} ]
+    },
+    {
+        name:"Begleitung PZS durch QMT FD und Kleeblatt", sectionKey:"Good Practices",
+        meilenstein:"PZS",
+        rasic:{r:"QMT PL",a:"QMT PL",s:"QMT BD"},
+        documents:"Basis TOP 50",
+        link: "https://atc.bmwgroup.net/confluence/spaces/~qtg4000/pages/8438514193/Seamless+Launch+Folder",
+        chart:[ {type:"diamond", at:"PZS"} ]
+    },
+    {
+        name:"Projekt-/Anlaufberichte (Transparenz und Tracking)", sectionKey:"Good Practices",
+        meilenstein:"ab PVL", nutzen:"Transparenz & Tracking",
+        rasic:{r:"QMT FD",a:"QMT FD",s:"QMT BD"},
+        link: "https://atc.bmwgroup.net/confluence/spaces/~qtg4000/pages/8438514193/Seamless+Launch+Folder",
+        // ab PVL → PVL start, recurs until SOP
+        chart:[
+            {type:"diamond", at:"PVL"},
+            {type:"diamond", at:"SOP"}
+        ]
+    },
+    {
+        name:'Vorgezogene "Requalis" (Bestätigung)', sectionKey:"Good Practices",
+        meilenstein:"n. SOP", nutzen:"Sicherstellung Anlieferqualität",
+        rasic:{r:"QMT FD",a:"QMT PL",s:"QMT BD"},
+        documents:"Basis TOP 50",
+        link: "https://atc.bmwgroup.net/confluence/spaces/~qtg4000/pages/8438514193/Seamless+Launch+Folder",
+        chart:[ {type:"diamond", at:"3Mo"} ]
+    },
+    {
+        name:"Präventive Sortierungen", sectionKey:"Good Practices",
+        meilenstein:"ab VS 0", nutzen:"Sicherstellung Anlieferqualität",
+        rasic:{r:"QMT FD",a:"QMT BD",s:"QMT PL"},
+        link: "https://atc.bmwgroup.net/confluence/spaces/~qtg4000/pages/8438514193/Seamless+Launch+Folder",
+        // ab VS 0 = PVL column → 1 diamond at PVL
+        chart:[ {type:"diamond", at:"PVL"} ]
+    },
+    {
+        name:"Präventive Sortierungen/Q-Gates beim Lieferant", sectionKey:"Good Practices",
+        meilenstein:"abVS 2", nutzen:"Sicherstellung Anlieferqualität",
+        rasic:{r:"QMT BD",a:"QMT PL",s:"QMT PL"},
+        link: "https://atc.bmwgroup.net/confluence/spaces/~qtg4000/pages/8438514193/Seamless+Launch+Folder",
+        // ab VS2 → VS2 + AP
+        chart:[
+            {type:"diamond", at:"VS2"},
+            {type:"diamond", at:"AP"}
+        ]
+    },
+    {
+        name:"Schadteiltische bei kritischen Umfängen", sectionKey:"Good Practices",
+        meilenstein:"ab VS 1", nutzen:"Sicherstellung Anlieferqualität",
+        rasic:{r:"QMT FD",a:"QMT PL",s:"QMT PL"},
+        link: "https://atc.bmwgroup.net/confluence/spaces/~qtg4000/pages/8438514193/Seamless+Launch+Folder",
+        // ab VS1 → 1 diamond at VS1
+        chart:[ {type:"diamond", at:"VS1"} ]
+    },
+    {
+        name:"Anforderung von 8D Reporten", sectionKey:"Good Practices",
+        meilenstein:"ab PVL/VS0", nutzen:"Messung der Qualität von 8D Reporten",
+        rasic:{r:"QMT FD",a:"QMT BD",s:"QMT BD"},
+        link: "https://atc.bmwgroup.net/confluence/spaces/~qtg4000/pages/8438514193/Seamless+Launch+Folder",
+        // ab PVL → 1 diamond at PVL
+        chart:[ {type:"diamond", at:"PVL"} ]
+    },
+    {
+        name:"Nacharbeitstruppe", sectionKey:"Good Practices",
+        meilenstein:"ab PVL", nutzen:"Schnellerer Abbau Hofbestand",
+        rasic:{r:"QMT FD",a:"QMT BD",s:"QMT BD"},
+        link: "https://atc.bmwgroup.net/confluence/spaces/~qtg4000/pages/8438514193/Seamless+Launch+Folder",
+        // ab PVL → 1 diamond at PVL
+        chart:[ {type:"diamond", at:"PVL"} ]
+    },
+    { spacer:true, sectionKey:"Good Practices" },
+    {
+        name:"Teilnahme Cubing durch QMT FD ??", sectionKey:"Good Practices",
+        rasic:{r:"QMT FD",a:"QMT BD",s:"QMT BD"},
+        link: "https://atc.bmwgroup.net/confluence/spaces/~qtg4000/pages/8438514193/Seamless+Launch+Folder",
+        chart:[ {type:"diamond", at:"PVL"} ]
+    },
+    {
+        name:"Begleitung By-offs (erste Teile)", sectionKey:"Good Practices",
+        description:"Teilnahme Werk?",
+        link: "https://atc.bmwgroup.net/confluence/spaces/~qtg4000/pages/8438514193/Seamless+Launch+Folder",
+        chart:[]
+    },
+    {
+        name:"Auflegetage", sectionKey:"Good Practices",
+        link: "https://atc.bmwgroup.net/confluence/spaces/~qtg4000/pages/8438514193/Seamless+Launch+Folder",
+        // per Excel image: PVL + VS2
+        chart:[
+            {type:"diamond", at:"PVL"},
+            {type:"diamond", at:"VS2"}
+        ]
+    },
+    { name:'"Slow"-Build Umfänge', sectionKey:"Good Practices",link: "https://atc.bmwgroup.net/confluence/spaces/~qtg4000/pages/8438514193/Seamless+Launch+Folder", chart:[] },
+    { name:"Cubing", sectionKey:"Good Practices", description:"Teilnahme QSB?",link: "https://atc.bmwgroup.net/confluence/spaces/~qtg4000/pages/8438514193/Seamless+Launch+Folder", chart:[] },
+    { name:"Intensivtage (Bsp. Sitze, Spiegel, etc.)", sectionKey:"Good Practices",link: "https://atc.bmwgroup.net/confluence/spaces/~qtg4000/pages/8438514193/Seamless+Launch+Folder", chart:[] },
+    { name:"Involvierung der Ty Kollegen", sectionKey:"Good Practices", description:"TI-5 Prozess",link: "https://atc.bmwgroup.net/confluence/spaces/~qtg4000/pages/8438514193/Seamless+Launch+Folder", chart:[] },
+    {
+        name:"Teilnahme an IK durch QMT FD", sectionKey:"Good Practices",
+        meilenstein:"ab PVL", nutzen:"bei kritischen Themen",
+        rasic:{r:"QMT PL",a:"-",s:"QMT FD"},
+        documents:"Basis TOP 50",
+        link: "https://atc.bmwgroup.net/confluence/spaces/~qtg4000/pages/8438514193/Seamless+Launch+Folder",
+        // ab PVL → 1 diamond at PVL
+        chart:[ {type:"diamond", at:"PVL"} ]
+    },
+    {
+        name:"Teilnahme an ALR durch QMT FD", sectionKey:"Good Practices",
+        meilenstein:"ab PVL", nutzen:"bei kritischen Themen",
+        rasic:{r:"QMT PL",a:"-",s:"QMT FD"},
+        documents:"Basis TOP 50",
+        link: "https://atc.bmwgroup.net/confluence/spaces/~qtg4000/pages/8438514193/Seamless+Launch+Folder",
+        // ab PVL → 1 diamond at PVL
+        chart:[ {type:"diamond", at:"PVL"} ]
+    },
+
+    // ── LIEFERANTENMANAGEMENT ─────────────────
+    { section:"Lieferantenmanagement" },
+    {
+        name:"Lieferantentag QMT FD mit MO-Lx", sectionKey:"Lieferantenmanagement",
+        nutzen:"Managementebene (Projekt)",
+        rasic:{r:"QMT PL",a:"QMT PL",s:"QMT FD"},
+        link: "https://atc.bmwgroup.net/confluence/spaces/~qtg4000/pages/8438514193/Seamless+Launch+Folder",
+        // Kick-off BBG, then recurring through AP
+        chart:[
+            {type:"diamond", at:"BBG"},
+            {type:"diamond", at:"PVL"},
+            {type:"diamond", at:"VS1"},
+            {type:"diamond", at:"VS2"},
+            {type:"diamond", at:"AP"}
+        ]
+    },
+    {
+        name:"Auflegetage (ggf. Slow-Builds Sitze)", sectionKey:"Lieferantenmanagement",
+        nutzen:"Operative Ebene (Produkt)",
+        rasic:{r:"QMT FD",a:"QMT PL",s:"QMT PL"},
+        description:"in Abstimmung mit MO-Lx",
+        link: "https://atc.bmwgroup.net/confluence/spaces/~qtg4000/pages/8438514193/Seamless+Launch+Folder",
+        chart:[
+            {type:"diamond", at:"PVL"},
+            {type:"diamond", at:"VS1"}
+        ]
+    },
+    {
+        name:'Zusätzliche Auflegetage ("TOP 50 Themen")', sectionKey:"Lieferantenmanagement",
+        rasic:{r:"QMT FD",a:"QMT PL",s:"QMT PL"},
+        description:"in Abstimmung mit MO-Lx",
+        link: "https://atc.bmwgroup.net/confluence/spaces/~qtg4000/pages/8438514193/Seamless+Launch+Folder",
+        chart:[
+            {type:"diamond", at:"VS1"},
+            {type:"diamond", at:"VS2"}
+        ]
+    },
+    {
+        name:"Lieferantenstatusgespräche", sectionKey:"Lieferantenmanagement",
+        rasic:{r:"QMT PL",a:"QMT PL",s:"QMT FD"},
+        description:"in Abstimmung mit MO-Lx",
+        link: "https://atc.bmwgroup.net/confluence/spaces/~qtg4000/pages/8438514193/Seamless+Launch+Folder",
+        chart:[]
+    },
+
+    // ── SUPPORTPLANUNG WERK ───────────────────
+    { section:"Supportplanung Werk" },
+    {
+        name:"Supportplanung erstellen", sectionKey:"Supportplanung Werk",
+        meilenstein:"Projektphase",
+        rasic:{r:"QMT FD",a:"QMT FD",s:"-"},
+        description:"von Carlos Herrera",
+        link: "https://atc.bmwgroup.net/confluence/spaces/~qtg4000/pages/8438514193/Seamless+Launch+Folder",
+        // Projektphase → diamond at RFI2a (end of Projektphase)
+        chart:[ {type:"diamond", at:"RFI2a"} ]
+    },
+    {
+        name:'Installation "Anlauf QSP"', sectionKey:"Supportplanung Werk",
+        meilenstein:"zu PVL",
+        rasic:{r:"QMT FD",a:"QMT BD",s:"-"},
+        description:"Klärung Ressource",
+        link: "https://atc.bmwgroup.net/confluence/spaces/~qtg4000/pages/8438514193/Seamless+Launch+Folder",
+        chart:[ {type:"diamond", at:"PVL"} ]
+    },
+    {
+        name:'"Remote" Support für SP Anläufe', sectionKey:"Supportplanung Werk",
+        meilenstein:"ab PVL", nutzen:"Support, Sicherstellung Anlieferqualität",
+        rasic:{r:"QMT FD",a:"-",s:"-"},
+        link: "https://atc.bmwgroup.net/confluence/spaces/~qtg4000/pages/8438514193/Seamless+Launch+Folder",
+        // ab PVL → PVL + VS1
+        chart:[
+            {type:"diamond", at:"PVL"},
+            {type:"diamond", at:"VS1"}
+        ]
+    },
+    {
+        name:"Ressourcen bewerten und beantragen", sectionKey:"Supportplanung Werk",
+        description:"Verantwortung: Werkemanager",
+        rasic:{r:"QMT FD",a:"-",s:"-"},
+        link: "https://atc.bmwgroup.net/confluence/spaces/~qtg4000/pages/8438514193/Seamless+Launch+Folder",
+        chart:[ {type:"diamond", at:"Projektphase"} ]
+    },
+
+    // ── E/E PRÜFSTÄNDE ────────────────────────
+    { section:"E/E Prüfstände" },
+    {
+        name:"Einsteuerung Ressourcen", sectionKey:"E/E Prüfstände",
+        meilenstein:"Projektphase",
+        rasic:{r:"QMT FD",a:"QMT BD",s:"QMT PL"},
+        link: "https://atc.bmwgroup.net/confluence/spaces/~qtg4000/pages/8438514193/Seamless+Launch+Folder",
+        chart:[ {type:"diamond", at:"Projektphase"} ]
+    },
+    {
+        name:"Aufbau E/E Prüfstände gem. Prüfstandsstrategie", sectionKey:"E/E Prüfstände",
+        meilenstein:"ab PVL",
+        description:"gem. Standard lt. CoC",
+        rasic:{r:"QMT FD",a:"-",s:"-"},
+        link: "https://atc.bmwgroup.net/confluence/spaces/~qtg4000/pages/8438514193/Seamless+Launch+Folder",
+        // ab PVL → PVL + VS1 connector
+        chart:[
+            {type:"diamond", at:"PVL"},
+            {type:"diamond", at:"VS1"}
+        ]
+    },
+
+    // ── LDM PRÜFUNGEN ─────────────────────────
+    { section:"LDM Prüfungen" },
+    {
+        name:"Durchführung LDM Checks im Werk 0", sectionKey:"LDM Prüfungen",
+        rasic:{r:"QMT BD",a:"QMT PL",s:"QMT FD"},
+        description:"gem. abgestimmten Prozess",
+        link: "https://atc.bmwgroup.net/confluence/spaces/~qtg4000/pages/8438514193/Seamless+Launch+Folder",
+        // starts at Projektphase, short connector to BBG
+        chart:[
+            {type:"diamond", at:"Projektphase"},
+            {type:"diamond", at:"BBG"}
+        ]
+    },
+    {
+        name:"Durchführung LDM Checks in den Serienwerken", sectionKey:"LDM Prüfungen",
+        meilenstein:"ab PVL",
+        rasic:{r:"QMT FD",a:"QMT PL",s:"QMT BD"},
+        description:"gem. abgestimmten Prozess",
+        link: "https://atc.bmwgroup.net/confluence/spaces/~qtg4000/pages/8438514193/Seamless+Launch+Folder",
+        // ab PVL → PVL + VS1
+        chart:[
+            {type:"diamond", at:"PVL"},
+            {type:"diamond", at:"VS1"}
+        ]
+    },
+    {
+        name:"Weiterentwicklung LDM Strategie für SP 2025ff (EES 2029)", sectionKey:"LDM Prüfungen",
+        rasic:{r:"QMT FD",a:"QMT BD",s:"QMT BD"},
+        description:"Digitale Fahrzeugakte",
+        link: "https://atc.bmwgroup.net/confluence/spaces/~qtg4000/pages/8438514193/Seamless+Launch+Folder",
+        chart:[]
+    },
+
+    // ── PRÄVENTIVES VERSORGUNGSTEAM ───────────
+    { section:"Präventives Versorgungsteam" },
+    {
+        name:"Präventives Versorgungsteam", sectionKey:"Präventives Versorgungsteam",
+        rasic:{r:"QMT FD",a:"QMT BD",s:"QMT PL"},
+        description:"Gemeinsam mit MO-Lx und TV-3x",
+        link: "https://atc.bmwgroup.net/confluence/spaces/~qtg4000/pages/8438514193/Seamless+Launch+Folder",
+        chart:[]
+    },
+
+    // ── PROJEKTÜBERGABE ───────────────────────
+    { section:"Projektübergabe" },
+    {
+        name:"Übergabe Projekt - Serie", sectionKey:"Projektübergabe",
+        meilenstein:"3 Mo. n. SOP",
+        rasic:{r:"QMT PL",a:"QMT BD",s:"QMT FD"},
+        description:"Übergabe des Projektes in die Serie",
+        documents:"Übergabeprotokoll Projekt-OTD",
+        link: "https://atc.bmwgroup.net/confluence/spaces/~qtg4000/pages/8438514193/Seamless+Launch+Folder",
+        chart:[ {type:"diamond", at:"3Mo"} ]
+    },
+    { spacer:true, sectionKey:"Projektübergabe" },
+    {
+        name:"Abstimmung Verfügbarkeit Residenten und Repairshops", sectionKey:"Projektübergabe",
+        meilenstein:"ab HEA",
+        rasic:{r:"QMT FD",a:"QMT PL",s:"QMT BD"},
+        description:"Beginn Abstimmung ab PVL",
+        documents:"Basis TOP 50 Themen",
+        link: "https://atc.bmwgroup.net/confluence/spaces/~qtg4000/pages/8438514193/Seamless+Launch+Folder",
+        // ab HEA → starts at PVL (early prep), milestone at AP
+        chart:[
+            {type:"diamond", at:"PVL"},
+            {type:"diamond", at:"AP"}
+        ]
+    },
+
+    // ── SONSTIGES ─────────────────────────────
+    { section:"Sonstiges" },
+    { name:"Analyse Hardware",    sectionKey:"Sonstiges",link: "https://atc.bmwgroup.net/confluence/spaces/~qtg4000/pages/8438514193/Seamless+Launch+Folder", chart:[] },
+    { name:"Bsp Glasdächer",      sectionKey:"Sonstiges",link: "https://atc.bmwgroup.net/confluence/spaces/~qtg4000/pages/8438514193/Seamless+Launch+Folder", chart:[] },
+    { name:"Kosten vs. LeLe Q",   sectionKey:"Sonstiges",link: "https://atc.bmwgroup.net/confluence/spaces/~qtg4000/pages/8438514193/Seamless+Launch+Folder", chart:[] }
+];
+
+// ════════════════════════════════════════════════
+//  GENERATE & BUILD
+// ════════════════════════════════════════════════
+function generateGantt() {
+    const name  = document.getElementById('projectName').value.trim();
+    const start = document.getElementById('startDate').value;
+    const end   = document.getElementById('endDate').value;
+    if (!name || !start || !end) { alert('Bitte alle Felder ausfüllen!'); return; }
+
+    projectStartDate = new Date(start);
+    projectEndDate   = new Date(end);
+    const months = Math.round((projectEndDate - projectStartDate) / (1000*60*60*24*30));
+
+    // success
+    const sm = document.getElementById('successMsg');
+    sm.textContent = `✓  Anlaufplan für Projekt "${name}" erfolgreich generiert!`;
+    sm.classList.add('show');
+    setTimeout(() => sm.classList.remove('show'), 5000);
+
+    // project info
+    document.getElementById('projectInfo').innerHTML =
+        `<strong>Projekt: ${name}</strong>&nbsp;|&nbsp;` +
+        `Start: ${projectStartDate.toLocaleDateString('de-DE')}&nbsp;|&nbsp;` +
+        `Ende: ${projectEndDate.toLocaleDateString('de-DE')}&nbsp;|&nbsp;` +
+        `Dauer: ${months} Monate`;
+    document.getElementById('projectInfo').style.display = 'block';
+
+    document.getElementById('ctrlSection').style.display    = 'flex';
+    document.getElementById('ganttContainer').style.display = 'block';
+
+    buildChart();
+}
+
+function esc(value = '') {
+    return String(value).replace(/[&<>"']/g, char => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#039;'
+    }[char]));
+}
+
+function activityNameHtml(row) {
+    const name = esc(row.name || '');
+    const cls = `act-name${row.bold ? '' : ' light-weight'}`;
+
+    if (!row.link) {
+        return `<span class="${cls}">${name}</span>`;
+    }
+
+    return `
+        <a class="${cls} act-link"
+           href="${esc(row.link)}"
+           target="_blank"
+           rel="noopener noreferrer"
+           title="Dokumentation öffnen">
+           ${name}
+        </a>
+    `;
+}
+
+function buildChart() {
+    const root = document.getElementById('ganttChart');
+    root.innerHTML = '';
+
+    // ── RFI MARKER ROW
+    const rfiRow   = document.createElement('div');
+    rfiRow.className = 'rfi-row';
+    const rfiLeft  = document.createElement('div');
+    rfiLeft.className = 'rfi-row-left';
+    const rfiRight = document.createElement('div');
+    rfiRight.className = 'rfi-row-right';
+
+    RFI_MARKERS.forEach(r => {
+        const pin = document.createElement('div');
+        pin.className = 'rfi-pin';
+        pin.style.left = pct(r.pos) + '%';
+        // Show calculated date if available
+        const d = rfiToDate(r.key);
+        const dateStr = d ? ` (${fmtDate(d)})` : '';
+        pin.innerHTML  = `<div class="rfi-diamond-outer"></div>
+                          <span class="rfi-pin-label">${r.label}</span>
+                          ${r.sub ? `<span class="rfi-pin-sub">${r.sub}${dateStr}</span>` : ''}`;
+        rfiRight.appendChild(pin);
+    });
+    rfiRow.appendChild(rfiLeft);
+    rfiRow.appendChild(rfiRight);
+    root.appendChild(rfiRow);
+
+    // ── PHASE HEADER (with calculated dates)
+    const hdr = document.createElement('div');
+    hdr.className = 'gantt-header';
+    hdr.innerHTML = `<div class="gantt-header-cell">Aktivität</div>` +
+        PHASES.map(p => {
+            const d = phaseToDate(p.key);
+            const dateStr = d ? fmtDate(d) : '';
+            return `<div class="gantt-header-cell">${p.label}<small>${dateStr}</small></div>`;
+        }).join('');
+    root.appendChild(hdr);
+
+    // ── SECTIONS & ROWS
+    let sectionBody = null;
+
+    DATA.forEach(row => {
+        if (row.section !== undefined) {
+            const sec   = document.createElement('div');
+            sec.className   = 'gantt-section';
+            sec.dataset.sec = row.section;
+
+            const title = document.createElement('div');
+            title.className = 'section-title';
+            title.innerHTML = `${row.section} <span class="tgl">▼</span>`;
+            title.onclick = () => {
+                title.classList.toggle('collapsed');
+                title.nextElementSibling.classList.toggle('collapsed');
+            };
+
+            sectionBody = document.createElement('div');
+            sectionBody.className = 'section-body';
+
+            sec.appendChild(title);
+            sec.appendChild(sectionBody);
+            root.appendChild(sec);
+            return;
+        }
+
+        if (row.spacer) {
+            const sp = document.createElement('div');
+            sp.className = 'gantt-row spacer';
+            sp.dataset.sec = row.sectionKey || '';
+            if (sectionBody) sectionBody.appendChild(sp);
+            return;
+        }
+
+        const rowEl = document.createElement('div');
+        rowEl.className = 'gantt-row';
+        rowEl.dataset.sec    = row.sectionKey || '';
+        rowEl.dataset.person = JSON.stringify(row.rasic || {});
+
+        // Determine which phases this row touches (for phase filter)
+        const touchedPhases = (row.chart || [])
+            .map(el => el.at)
+            .map(key => PHASES.find(p => p.key === key)?.key || '')
+            .filter(Boolean);
+        rowEl.dataset.phases = touchedPhases.join(',');
+
+        // ── LEFT CELL
+        const left = document.createElement('div');
+        left.className = 'row-left';
+
+        // Calculate date range from diamonds
+        const diamonds = (row.chart || []).filter(el => el.type === 'diamond');
+        let dateRange = '';
+        if (diamonds.length >= 1 && projectStartDate) {
+            const firstDate = resolveDate(diamonds[0].at);
+            const lastDate  = diamonds.length > 1 ? resolveDate(diamonds[diamonds.length-1].at) : null;
+            if (firstDate) {
+                dateRange = lastDate
+                    ? `${fmtDate(firstDate)} – ${fmtDate(lastDate)}`
+                    : fmtDate(firstDate);
+            }
+        }
+
+        left.innerHTML =
+            activityNameHtml(row) +
+            (row.meilenstein ? `<span class="act-milestone">• ${esc(row.meilenstein)}</span>` : '') +
+            (row.nutzen      ? `<span class="act-nutzen">${esc(row.nutzen)}</span>` : '') +
+            (dateRange       ? `<span class="act-dates">📅 ${esc(dateRange)}</span>` : '');
+        rowEl.appendChild(left);
+
+        // ── TIMELINE
+        const tl = document.createElement('div');
+        tl.className = 'row-right';
+        PHASES.forEach(() => {
+            const c = document.createElement('div');
+            c.className = 'phase-cell';
+            tl.appendChild(c);
+        });
+
+        // Auto connector: drawn between first & last diamond
+        if (diamonds.length >= 2) {
+            const firstPct = resolveLeft(diamonds[0].at);
+            const lastPct  = resolveLeft(diamonds[diamonds.length - 1].at);
+            const line = document.createElement('div');
+            line.className = 'g-connector';
+            line.style.left  = firstPct + '%';
+            line.style.width = (lastPct - firstPct) + '%';
+            tl.appendChild(line);
+        }
+
+        // Draw diamonds
+        diamonds.forEach(el => {
+            const dw = document.createElement('div');
+            dw.className = 'g-diamond';
+            dw.style.left = resolveLeft(el.at) + '%';
+            dw.innerHTML  = '<div class="g-diamond-inner"></div>';
+            dw.addEventListener('mouseenter', e => showTip(e, row));
+            dw.addEventListener('mouseleave', hideTip);
+            tl.appendChild(dw);
+        });
+
+        rowEl.appendChild(tl);
+        if (sectionBody) sectionBody.appendChild(rowEl);
+        else root.appendChild(rowEl);
+    });
+    renderTodayLine();
+}
+
+// ════════════════════════════════════════════════
+//  FILTERS
+// ════════════════════════════════════════════════
+function applyFilters() {
+    const filterSec    = document.getElementById('filterSection').value;
+    const filterPhase  = document.getElementById('filterPhase').value;
+    const filterPerson = document.getElementById('filterPerson').value;
+
+    document.querySelectorAll('.gantt-row').forEach(row => {
+        if (row.classList.contains('spacer')) return;
+
+        const rowSec    = row.dataset.sec    || '';
+        const rowPhases = row.dataset.phases || '';
+        const rowPerson = row.dataset.person || '{}';
+
+        let show = true;
+
+        if (filterSec && rowSec !== filterSec)  show = false;
+        if (filterPhase && !rowPhases.includes(filterPhase)) show = false;
+        if (filterPerson) {
+            const rasic = JSON.parse(rowPerson);
+            if (!Object.values(rasic).includes(filterPerson)) show = false;
+        }
+
+        row.classList.toggle('hidden', !show);
+    });
+
+    // Show/hide section headers based on whether any rows are visible
+    document.querySelectorAll('.gantt-section').forEach(sec => {
+        const secKey = sec.dataset.sec;
+        if (!filterSec || !secKey) return;
+        const hasVisible = [...sec.querySelectorAll('.gantt-row:not(.spacer)')]
+            .some(r => !r.classList.contains('hidden'));
+        sec.style.display = hasVisible ? '' : 'none';
+    });
+}
+
+function resetFilters() {
+    document.getElementById('filterSection').value = '';
+    document.getElementById('filterPhase').value   = '';
+    document.getElementById('filterPerson').value  = '';
+    document.querySelectorAll('.gantt-row').forEach(r => r.classList.remove('hidden'));
+    document.querySelectorAll('.gantt-section').forEach(s => s.style.display = '');
+}
+
+// ════════════════════════════════════════════════
+//  TOOLTIP
+// ════════════════════════════════════════════════
+function showTip(e, row) {
+    const tip = document.getElementById('tooltip');
+    document.getElementById('tipTitle').textContent = row.name || '';
+
+    // dates from diamonds
+    const diamonds = (row.chart||[]).filter(x=>x.type==='diamond');
+    let datesHtml = '';
+    if (diamonds.length && projectStartDate) {
+        const first = resolveDate(diamonds[0].at);
+        const last  = diamonds.length>1 ? resolveDate(diamonds[diamonds.length-1].at) : null;
+        if (first) datesHtml = tr('Zeitraum',
+            last ? `${fmtDate(first)} – ${fmtDate(last)}` : fmtDate(first));
+    }
+
+    let html = datesHtml;
+    if (row.meilenstein) html += tr('Meilenstein',    row.meilenstein);
+    if (row.nutzen)      html += tr('Nutzen',          row.nutzen);
+    if (row.rasic?.r)    html += tr('Responsible (R)', row.rasic.r);
+    if (row.rasic?.a)    html += tr('Accountable (A)', row.rasic.a);
+    if (row.rasic?.s)    html += tr('Support (S)',     row.rasic.s);
+    if (row.documents)   html += tr('Dokumente',       row.documents);
+    if (row.description) html += `<div class="tip-desc">${row.description}</div>`;
+    document.getElementById('tipBody').innerHTML = html;
+
+    let lx = e.clientX + 16, ly = e.clientY + 16;
+    if (lx + 290 > window.innerWidth)  lx = e.clientX - 300;
+    if (ly + 200 > window.innerHeight) ly = e.clientY - 210;
+    tip.style.left = lx + 'px';
+    tip.style.top  = ly + 'px';
+    tip.classList.add('show');
+}
+function hideTip() { document.getElementById('tooltip').classList.remove('show'); }
+function tr(l, v) {
+    return `<div class="tip-row"><span class="tip-lbl">${l}:</span><span class="tip-val">${v}</span></div>`;
+}
+
+// ════════════════════════════════════════════════
+//  FULLSCREEN
+// ════════════════════════════════════════════════
+function toggleFullscreen() {
+    const c   = document.getElementById('ganttContainer');
+    const btn = document.getElementById('fsBtn');
+
+    c.classList.toggle('fullscreen');
+    btn.textContent = c.classList.contains('fullscreen') ? '✕ Schließen' : '⛶ Vollbild';
+
+    setTimeout(updateTodayLine, 50);
+}
+window.addEventListener('resize', updateTodayLine);
+
+// ════════════════════════════════════════════════
+//  EXPORT
+// ════════════════════════════════════════════════
+function showExportModal() {
+    if (!document.getElementById('ganttChart').innerHTML) {
+        alert('Bitte zuerst einen Anlaufplan generieren!'); return;
+    }
+    document.getElementById('expModal').classList.add('show');
+}
+function closeExportModal() { document.getElementById('expModal').classList.remove('show'); }
+
+async function doExport(fmt) {
+    closeExportModal();
+    const wrapper   = document.getElementById('ganttWrapper');
+    const container = document.getElementById('ganttContainer');
+
+    const prev = { ov: container.style.overflow, mh: container.style.maxHeight };
+    container.style.overflow  = 'visible';
+    container.style.maxHeight = 'none';
+
+    const canvas = await html2canvas(wrapper, {
+        scale:2, backgroundColor:'#fff', useCORS:true,
+        scrollX:0, scrollY:-window.scrollY,
+        windowWidth:  wrapper.scrollWidth,
+        windowHeight: wrapper.scrollHeight
+    });
+
+    container.style.overflow  = prev.ov;
+    container.style.maxHeight = prev.mh;
+
+    if (fmt === 'png') {
+        const a = document.createElement('a');
+        a.download = 'anlaufplan.png';
+        a.href = canvas.toDataURL('image/png', 1.0);
+        a.click();
+    } else {
+        const pdf = new jspdf.jsPDF({ orientation:'landscape', unit:'mm', format:'a3' });
+        const w = 420, h = (canvas.height * w) / canvas.width;
+        pdf.addImage(canvas.toDataURL('image/png',1.0), 'PNG', 0, 0, w, h);
+        pdf.save('anlaufplan.pdf');
+    }
+}
+</script>
+</body>
+</html>
